@@ -1,7 +1,7 @@
 ---
-title: "Title of Analysis Goes Here"
-author: "Your Name (netid@illinois.edu)"
-date: "Insert Date Here"
+title: " Using Machine Learning Algorithms to Predict the Probability of a Heart Disease"
+author: "Akash Sukhija (sukhija4@illinois.edu)"
+date: "November 11, 2020"
 output:
   html_document: 
     theme: default
@@ -14,53 +14,318 @@ knitr::opts_chunk$set(echo = FALSE, fig.align = 'center')
 
 ```{r, load-packages, include = FALSE}
 # load packages
+library(tibble)
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(dbplyr)
+library(skimr)
+
 ```
 
 ```{r read-full-data, warning = FALSE, message = FALSE}
 # read full data
 hd = readr::read_csv("data/hd.csv")
+
+
 ```
 
 ***
 
 ## Abstract
 
-> Abstract text goes here.
+> Introduction: Gives a Brief Overview of the Project   
+  
+> Methods : Discusses about the Data, Various Preprocessing Techniques, and the different   Models under consideration
+  
+> Results : Exhibit the results of the models experimented with in the Methods      section
+
+> Discussion: States the best model that can be used and the vitality of the results.
 
 ***
 
 ## Introduction
 
-Write your introduction here.
+Using Machine Learning Algorithms to Predict the Probability of a Heart Disease.
+
+Heart Diseases are a major cause of deaths all around the globe.  (Yes, it's a Globe and not a Flat Surface) Millions of deaths can be avoided if the disease is found well in advance and treated upon to remove the blockages from the arteries. Finding an abnormality in the heart can be done via a procedure called Angiography. Angiography or Coronary Angiogram is a process where X-rays are used to study the condition of blood vessels in the arms, chest, or head. Any obstruction of the blood vessels is identified, recorded and reported to the consulting Cardiologist. The angiogram is performed by placing a catheter in an artery or vein to be reviewed. An iodine dye is injected into the artery, which allows an x-ray to view the exact site of any blockage or tear in an artery. 
+
+
+However, extracting an Angiogram using Angiography can be a highly intrusive and a highly expensive procedure. 
+With this project I plan to introduce a tool that can help predict the presence of heart disease with minimal intrusion and a high accuracy rate. The tool will utilize data from heart patients such the patient's age, sex, cholesterol levels and 11 other attributes that will help our tool learn better and make accurate predictions. 
+
+#### We'll start by looking at the Data:
+
+
+```{r}
+skimr::skim(hd)
+```
+
+From the above 'Skimming' or a Brief Univariate/Single Attribute Analysis of Our Data, it has come to light that there are values in the Cholesterol Attribute that have Zero Values which can be assumed to be errors while collecting the data. 
+
+
+#### Inspecting the Zero Cholesterol Values by creating a Plot.
+
+```{r}
+
+plot(chol ~ age, data = hd , pch = 20)
+grid()
+
+```
+
 
 ***
 
 ## Methods
 
-Describe the methods used in this section.
+1. Cleaning the Data 
+2. Splitting the Data into Train and Testing Splits
+3. Omitting The Zero Values from the Cholesterol Column 
+4. Pre-processing Data before Training the Model(Converting Columns into Factors for Better Learning of the Algorithm)
+5. Converting the Problem from a Multi-Class Classification to a Binary Classification
+6. Using a 7 Fold Cross Validation Strategy 
+7. Training the Models on Training Data
+8. Calculating the Accuracy of All the Models
+
+
 
 ### Data
 
-Specifically describe the data and how it is used here.
+The Data contains 14 attributes but many columns contain NAs which need to be to reduced for better predictions. 
+
+#### List of Attributes in the Dataset: 
+age, sex, cp, trestbps, chol, fbs,restecg, thalach, exang, oldpeak, slope,ca, thal, num( The Response Variable)
+
+
+1. Cleaning the Data 
+
+Below is a Snippet of the Clean Data
+```{r}
+
+
+# function to determine proportion of NAs in a vector
+na_prop = function(x) {
+  mean(is.na(x))
+}
+
+# check proportion of NAs in each column
+#sapply(hd, na_prop)
+
+# create dataset without columns containing more than 33% NAs
+hd_clean = na.omit(hd[, !sapply(hd, na_prop) > 0.33])
+hd_clean
+```
+
+ 2. Splitting the Data into Train and Testing Splits
+
+```{r}
+
+# tst-trn split data
+
+set.seed(123)
+trn_idx = sample(nrow(hd_clean), size = 0.8 * nrow(hd_clean))
+trn = hd_clean[trn_idx, ]
+tst = hd_clean[-trn_idx, ]
+
+```
+
+ 3. Omitting The Zero Values from the Cholesterol Column 
+```{r}
+trn[which(trn$chol == 0),]$chol = NA
+
+# Omitting the Rows containing NAs for training the Algorithms
+trn=na.omit(trn)
+
+```
+
+ 4. Feature Engineering (Converting Columns into Factors for Better Learning of the Algorithm)
+
+A Snippet of the Columns after conversion. 
+
+```{r}
+
+
+trn$sex <- factor(trn$sex)
+trn$cp <- factor(trn$cp)
+trn$fbs <- factor(trn$fbs)
+trn$restecg <- factor(trn$restecg)
+trn$exang <- factor(trn$exang)
+trn$num <- factor(trn$num)
+trn$location <- factor(trn$location)
+
+trn
+```
+5. Converting the Problem from a Multi-Class Classification to a Binary Classification problem. The response variable (or the variable that needs to be predicted) in our dataset contains a factor with 5 levels (v0, v1, v2, v3 and v4). The Variable v0 represents NO heart disease and other variables represent presence of heart disease. Converting v0 to '0' and others to '1'. This is done to simplify the problem, whether a patient has heart disease or not. 
+
+
+```{r}
+trn$num = factor(dplyr::case_when(
+  trn$num == "v0" ~ "0",
+  trn$num == "v1" ~ "1",
+  trn$num == "v2" ~ "1",
+  trn$num == "v3" ~ "1",
+  trn$num == "v4" ~ "1"
+))
+
+trn$num
+```
+
+Applying the Same Transformations on the Test Split as done earlier on the Train Split
+
+```{r}
+
+tst[which(tst$chol == 0),]$chol = NA
+tst=na.omit(tst)
+
+
+tst$sex <- factor(tst$sex)
+tst$cp <- factor(tst$cp)
+tst$fbs <- factor(tst$fbs)
+tst$restecg <- factor(tst$restecg)
+tst$exang <- factor(tst$exang)
+tst$num <- factor(tst$num)
+tst$location <- factor(tst$location)
+
+
+tst$num = factor(dplyr::case_when(
+  tst$num == "v0" ~ "0",
+  tst$num == "v1" ~ "1",
+  tst$num == "v2" ~ "1",
+  tst$num == "v3" ~ "1",
+  tst$num == "v4" ~ "1"
+))
+
+```
 
 ### Modeling
 
-Discuss your modeling and validation strategy here.
+a. A 7 Fold Cross Validation Strategy is used here
+
+b. Training the Models on Training Data
+
+#### Three Models are Trained on the Train Dataset
+
+```{r}
+
+cv_10 = trainControl(method = "cv", number = 7)
+
+```
+#### 1.  Decision Tree Classifier
+
+Code : hd_tree_mod = train(form = num~., data = trn, method = "rpart", trControl = cv_10, tuneLength = 15 )
+
+Results with Cross Validation:
+```{r}
+hd_tree_mod = train(form = num~., data = trn, method = "rpart", trControl = cv_10, tuneLength = 15 )
+
+hd_tree_mod$results
+```
+#### 2. Gradient Boosting Machine Classifier
+
+Code: hd_gbm_mod = train(form = num~., data = trn, method = "gbm", trControl = cv_10, verbose = FALSE )
+
+Results with Cross Validation:
+
+```{r}
+hd_gbm_mod = train(form = num~., data = trn, method = "gbm", trControl = cv_10, verbose = FALSE )
+
+hd_gbm_mod$results
+```
+
+#### 3.  Naive Bayes Classifier
+
+Code : hd_nb_mob = train(form = num~., data = trn, method = "naive_bayes", trControl = cv_10 )
+
+Results with Cross Validation:
+
+```{r}
+hd_nb_mob = train(form = num~., data = trn, method = "naive_bayes", trControl = cv_10 )
+
+hd_nb_mob$results
+
+```
 
 ***
 
+
+
 ## Results
 
-State your results here.
+Calculating the Accuracy of All the Models using the Test Data
+
+```{r}
+
+#Defining a Function to Calculate Accuracy
+
+calc_accuracy = function(actual, predicted) {
+  mean(actual == predicted)
+}
+
+#sprintf("%s !! my name is %s and my number is %i", a, b, c)
+tree = calc_accuracy(actual = tst$num , predicted =  predict(hd_tree_mod, tst, type = 'raw'))
+sprintf ("The Accuracy of Decision Tree Classifier is %f:", tree) 
+gbmo = calc_accuracy(actual = tst$num , predicted =  predict(hd_gbm_mod, tst, type = 'raw'))
+
+sprintf ("The Accuracy of Gradient Boosting Machine Classifier is %f", gbmo)
+
+nbo = calc_accuracy(actual = tst$num , predicted =  predict(hd_nb_mob, tst, type = 'raw'))
+sprintf ("The Accuracy of Naive Bayes Classifier is %f", nbo)
+
+```
+
 
 ***
 
 ## Discussion
 
-Discuss your results here.
+The performance of the Gradient Boosting Machine Classifier and the Naive Bayes Classifier are almost comparable at 81.5% and 79.2% respectively. Any of these two models can be confidently used as the final model. Talking about interpretation of these results, the metric being used to compare different models in our case is Accuracy. The user of this tool can confidently predict the presence of a heart disease with an 80% chance of success, which is very high considering the high mortality of heart disease and higher expense of intrusive heart angiography. 
 
 ***
 
 ## Appendix
 
-Place potential additional information here.
+
+
+Source : https://www.medicoverhospitals.in/difference-between-angiography-and-angioplasty
+
+#### Data(Attribute) Definitions: 
+
+
+3 age: age in years
+4 sex: sex (1 = male; 0 = female)
+9 cp: chest pain type
+-- Value 1: typical angina
+-- Value 2: atypical angina
+-- Value 3: non-anginal pain
+-- Value 4: asymptomatic
+10 trestbps: resting blood pressure (in mm Hg on admission to the hospital)
+12 chol: serum cholestoral in mg/dl
+16 fbs: (fasting blood sugar > 120 mg/dl) (1 = true; 0 = false)
+19 restecg: resting electrocardiographic results
+-- Value 0: normal
+-- Value 1: having ST-T wave abnormality (T wave inversions and/or ST elevation or depression of > 0.05 mV)
+-- Value 2: showing probable or definite left ventricular hypertrophy by Estes' criteria
+
+32 thalach: maximum heart rate achieved
+
+38 exang: exercise induced angina (1 = yes; 0 = no)
+
+40 oldpeak = ST depression induced by exercise relative to rest
+41 slope: the slope of the peak exercise ST segment
+-- Value 1: upsloping
+-- Value 2: flat
+-- Value 3: downsloping
+
+44 ca: number of major vessels (0-3) colored by flourosopy
+
+51 thal: 3 = normal; 6 = fixed defect; 7 = reversable defect
+
+58 num: diagnosis of heart disease (angiographic disease status)
+-- Value 0: < 50% diameter narrowing
+-- Value 1: > 50% diameter narrowing
+(in any major vessel: attributes 59 through 68 are vessels)
+
+Definition Source: https://archive.ics.uci.edu/ml/datasets/Heart+Disease
+
+***
